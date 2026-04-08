@@ -1,11 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import { db } from './lib/firebase';
-import { onValue, ref, remove, set } from 'firebase/database';
+import { onValue, ref, remove, set, update } from 'firebase/database';
 
 const TEACHER_PASSWORD = '1234';
 const SEAT_COUNT = 26;
 const OPTIONS = ['A', 'B', 'C', 'D'];
 const QUESTION_COUNT = 10;
+
+// 這裡先預設每題答案，之後你只要改這裡即可
+const ANSWER_KEY = {
+  Q1: 'A',
+  Q2: 'B',
+  Q3: 'C',
+  Q4: 'D',
+  Q5: 'A',
+  Q6: 'B',
+  Q7: 'C',
+  Q8: 'D',
+  Q9: 'A',
+  Q10: 'B',
+};
 
 function App() {
   const [role, setRole] = useState(null);
@@ -19,12 +33,17 @@ function App() {
   const [myAnswer, setMyAnswer] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [correctAnswer, setCorrectAnswer] = useState('');
+  const [revealed, setRevealed] = useState(false);
+
   useEffect(() => {
     const gameRef = ref(db, 'current_game');
 
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       setCurrentQ(data?.questionId || '');
+      setCorrectAnswer(data?.correctAnswer || '');
+      setRevealed(!!data?.revealed);
       setHasAnswered(false);
       setMyAnswer('');
     });
@@ -71,6 +90,16 @@ function App() {
     return base;
   }, [responses]);
 
+  const correctCount = useMemo(() => {
+    if (!revealed || !correctAnswer) return 0;
+    return responses.filter((item) => item.answer === correctAnswer).length;
+  }, [responses, correctAnswer, revealed]);
+
+  const wrongCount = useMemo(() => {
+    if (!revealed || !correctAnswer) return 0;
+    return responses.filter((item) => item.answer !== correctAnswer).length;
+  }, [responses, correctAnswer, revealed]);
+
   const handleTeacherLogin = () => {
     if (passwordInput === TEACHER_PASSWORD) {
       setIsAuth(true);
@@ -85,10 +114,25 @@ function App() {
       await set(ref(db, 'current_game'), {
         questionId,
         startedAt: Date.now(),
+        correctAnswer: ANSWER_KEY[questionId] || '',
+        revealed: false,
       });
     } catch (error) {
       console.error(error);
       alert('出題失敗');
+    }
+  };
+
+  const revealAnswer = async () => {
+    if (!currentQ) return;
+
+    try {
+      await update(ref(db, 'current_game'), {
+        revealed: true,
+      });
+    } catch (error) {
+      console.error(error);
+      alert('公布答案失敗');
     }
   };
 
@@ -97,6 +141,9 @@ function App() {
 
     try {
       await remove(ref(db, `responses/${currentQ}`));
+      await update(ref(db, 'current_game'), {
+        revealed: false,
+      });
     } catch (error) {
       console.error(error);
       alert('清空本題作答失敗');
@@ -146,6 +193,11 @@ function App() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const getResultText = (answer) => {
+    if (!revealed || !correctAnswer) return '';
+    return answer === correctAnswer ? '✅ 答對' : '❌ 答錯';
   };
 
   if (!role) {
@@ -222,6 +274,8 @@ function App() {
           <div style={cardStyle}>
             <h2 style={sectionTitleStyle}>出題</h2>
             <p style={mutedTextStyle}>目前題目：{currentQ || '尚未開始'}</p>
+            <p style={mutedTextStyle}>本題正解：{correctAnswer || '未設定'}</p>
+            <p style={mutedTextStyle}>公布狀態：{revealed ? '已公布' : '未公布'}</p>
 
             <div style={questionGridStyle}>
               {Array.from({ length: QUESTION_COUNT }, (_, i) => `Q${i + 1}`).map((q) => (
@@ -241,6 +295,12 @@ function App() {
             </div>
 
             <div style={{ display: 'grid', gap: 10, marginTop: 20 }}>
+              <button
+                style={{ ...primaryBtnStyle, backgroundColor: '#7c3aed' }}
+                onClick={revealAnswer}
+              >
+                公布答案
+              </button>
               <button style={primaryBtnStyle} onClick={clearCurrentQuestionResponses}>
                 清空本題作答
               </button>
@@ -273,6 +333,18 @@ function App() {
                 </div>
               ))}
             </div>
+
+            {revealed && (
+              <div style={{ marginTop: 18, display: 'grid', gap: 10 }}>
+                <div style={resultSummaryBox}>
+                  正解：{correctAnswer || '未設定'}
+                </div>
+                <div style={resultRowBox}>
+                  <span>答對：{correctCount}</span>
+                  <span>答錯：{wrongCount}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ ...cardStyle, gridColumn: '1 / -1' }}>
@@ -283,7 +355,20 @@ function App() {
               ) : (
                 responses.map((item) => (
                   <div key={`seat-${item.seatNumber}`} style={listRowStyle}>
-                    <span style={{ fontWeight: 700 }}>{item.name}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <span style={{ fontWeight: 700 }}>{item.name}</span>
+                      {revealed && (
+                        <span
+                          style={{
+                            fontSize: 14,
+                            color: item.answer === correctAnswer ? '#16a34a' : '#dc2626',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {getResultText(item.answer)}
+                        </span>
+                      )}
+                    </div>
                     <span style={answerBadgeStyle}>{item.answer}</span>
                   </div>
                 ))
@@ -363,8 +448,29 @@ function App() {
               </div>
             )}
 
-            {currentQ && hasAnswered && (
+            {currentQ && hasAnswered && !revealed && (
               <div style={successBoxStyle}>已送出答案：{myAnswer}</div>
+            )}
+
+            {currentQ && hasAnswered && revealed && (
+              <div style={resultStudentBox}>
+                <div style={{ fontSize: 24, fontWeight: 800 }}>
+                  你的答案：{myAnswer}
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, marginTop: 10 }}>
+                  正確答案：{correctAnswer}
+                </div>
+                <div
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 900,
+                    marginTop: 16,
+                    color: myAnswer === correctAnswer ? '#16a34a' : '#dc2626',
+                  }}
+                >
+                  {getResultText(myAnswer)}
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -531,6 +637,28 @@ const countNumberStyle = {
   fontWeight: 800,
 };
 
+const resultSummaryBox = {
+  backgroundColor: '#ede9fe',
+  border: '1px solid #c4b5fd',
+  borderRadius: 14,
+  padding: 14,
+  fontSize: 18,
+  fontWeight: 800,
+  textAlign: 'center',
+};
+
+const resultRowBox = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: 12,
+  backgroundColor: '#f8fafc',
+  border: '1px solid #e5e7eb',
+  borderRadius: 14,
+  padding: 14,
+  fontSize: 18,
+  fontWeight: 800,
+};
+
 const listBoxStyle = {
   maxHeight: 380,
   overflowY: 'auto',
@@ -622,6 +750,15 @@ const successBoxStyle = {
   border: '1px solid #bbf7d0',
   borderRadius: 16,
   padding: 20,
+};
+
+const resultStudentBox = {
+  marginTop: 12,
+  textAlign: 'center',
+  backgroundColor: '#f8fafc',
+  border: '1px solid #e5e7eb',
+  borderRadius: 16,
+  padding: 24,
 };
 
 export default App;
