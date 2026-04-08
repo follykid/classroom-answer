@@ -108,7 +108,20 @@ function App() {
       await remove(ref(db, 'current_game'));
     } catch (error) {
       console.error(error);
-      alert('結束題目失敗');
+      alert('結束目前題目失敗');
+    }
+  };
+
+  const clearAllData = async () => {
+    const ok = window.confirm('確定要清空所有題目與所有作答資料嗎？');
+    if (!ok) return;
+
+    try {
+      await remove(ref(db, 'current_game'));
+      await remove(ref(db, 'responses'));
+    } catch (error) {
+      console.error(error);
+      alert('清空全部資料失敗');
     }
   };
 
@@ -231,8 +244,17 @@ function App() {
               <button style={primaryBtnStyle} onClick={clearCurrentQuestionResponses}>
                 清空本題作答
               </button>
-              <button style={{ ...primaryBtnStyle, backgroundColor: '#f59e0b' }} onClick={endQuestion}>
+              <button
+                style={{ ...primaryBtnStyle, backgroundColor: '#f59e0b' }}
+                onClick={endQuestion}
+              >
                 結束目前題目
+              </button>
+              <button
+                style={{ ...primaryBtnStyle, backgroundColor: '#ef4444' }}
+                onClick={clearAllData}
+              >
+                清空全部資料
               </button>
             </div>
           </div>
@@ -342,9 +364,7 @@ function App() {
             )}
 
             {currentQ && hasAnswered && (
-              <div style={successBoxStyle}>
-                已送出答案：{myAnswer}
-              </div>
+              <div style={successBoxStyle}>已送出答案：{myAnswer}</div>
             )}
           </div>
         </div>
@@ -357,8 +377,7 @@ const layoutStyle = {
   minHeight: '100vh',
   padding: 20,
   background: 'linear-gradient(180deg, #eef4ff 0%, #f8fafc 100%)',
-  fontFamily:
-    'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   color: '#111827',
 };
 
