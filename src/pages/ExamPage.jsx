@@ -42,7 +42,11 @@ function ExamPage() {
       }
 
       setQuestionCount(Number(data.questionCount) || DEFAULT_QUESTION_COUNT);
-      setOptions(Array.isArray(data.options) && data.options.length > 0 ? data.options : DEFAULT_OPTIONS);
+      setOptions(
+        Array.isArray(data.options) && data.options.length > 0
+          ? data.options
+          : DEFAULT_OPTIONS
+      );
       setAnswerKey(data.answerKey || {});
     });
 
@@ -157,21 +161,50 @@ function ExamPage() {
       });
 
       const answeredCount = details.filter((item) => item.answer !== '-').length;
-      const correctCount = details.filter((item) => item.result === '答對').length;
-      const completionRate = questionCount > 0 ? ((answeredCount / questionCount) * 100).toFixed(1) : '0.0';
-      const accuracyRate = questionCount > 0 ? ((correctCount / questionCount) * 100).toFixed(1) : '0.0';
+      const correctCountPerStudent = details.filter((item) => item.result === '答對').length;
+      const completionRate = questionCount > 0
+        ? ((answeredCount / questionCount) * 100).toFixed(1)
+        : '0.0';
+      const accuracyRate = questionCount > 0
+        ? ((correctCountPerStudent / questionCount) * 100).toFixed(1)
+        : '0.0';
 
       return {
         seatNumber: seat,
         name: `${seat}號`,
         answeredCount,
-        correctCount,
+        correctCount: correctCountPerStudent,
         completionRate,
         accuracyRate,
         details,
       };
     });
   }, [allResponsesMap, answerKey, questionCount]);
+
+  const classAverageAccuracy = useMemo(() => {
+    const total = studentStats.reduce((sum, s) => sum + Number(s.accuracyRate), 0);
+    return studentStats.length ? (total / studentStats.length).toFixed(1) : '0.0';
+  }, [studentStats]);
+
+  const printableReport = useMemo(() => {
+    const lines = [];
+
+    lines.push(`全班共 ${SEAT_COUNT} 人`);
+    lines.push(`平均答對率：${classAverageAccuracy}%`);
+    lines.push('');
+
+    studentStats.forEach((student) => {
+      lines.push(
+        `${student.name}：作答 ${student.answeredCount}/${questionCount}，答對 ${student.correctCount}，答對率 ${student.accuracyRate}%`
+      );
+    });
+
+    return lines.join('\n');
+  }, [studentStats, questionCount, classAverageAccuracy]);
+
+  const handlePrintReport = () => {
+    window.print();
+  };
 
   const handleTeacherLogin = () => {
     if (passwordInput === TEACHER_PASSWORD) {
@@ -284,7 +317,15 @@ function ExamPage() {
           <h1 style={titleStyle}>課堂即時作答系統</h1>
           <p style={subTitleStyle}>老師出題，學生直接按選項作答</p>
 
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 24, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              justifyContent: 'center',
+              marginTop: 24,
+              flexWrap: 'wrap',
+            }}
+          >
             <button style={primaryBtnStyle} onClick={() => setRole('teacher')}>
               我是老師
             </button>
@@ -294,7 +335,14 @@ function ExamPage() {
             >
               我是學生
             </button>
-            <Link to="/setup" style={{ ...primaryBtnStyle, backgroundColor: '#7c3aed', textDecoration: 'none' }}>
+            <Link
+              to="/setup"
+              style={{
+                ...primaryBtnStyle,
+                backgroundColor: '#7c3aed',
+                textDecoration: 'none',
+              }}
+            >
               考試設定頁
             </Link>
           </div>
@@ -344,6 +392,9 @@ function ExamPage() {
             <Link to="/setup" style={{ ...ghostBtnStyle, textDecoration: 'none' }}>
               去設定頁
             </Link>
+            <button style={ghostBtnStyle} onClick={handlePrintReport}>
+              列印結果
+            </button>
             <button
               style={ghostBtnStyle}
               onClick={() => {
@@ -526,6 +577,11 @@ function ExamPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div style={{ ...cardStyle, gridColumn: '1 / -1' }}>
+            <h2 style={sectionTitleStyle}>班級測驗結果</h2>
+            <pre style={reportPreStyle}>{printableReport}</pre>
           </div>
         </div>
       </div>
@@ -944,6 +1000,17 @@ const studentDetailBoxStyle = {
   padding: 10,
   fontSize: 14,
   lineHeight: 1.5,
+};
+
+const reportPreStyle = {
+  whiteSpace: 'pre-wrap',
+  lineHeight: 1.8,
+  fontSize: 16,
+  backgroundColor: '#f8fafc',
+  border: '1px solid #e5e7eb',
+  borderRadius: 12,
+  padding: 16,
+  overflowX: 'auto',
 };
 
 export default ExamPage;
