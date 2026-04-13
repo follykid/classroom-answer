@@ -16,6 +16,7 @@ function ExamPage() {
   const [seatNumber, setSeatNumber] = useState('');
   const [currentQ, setCurrentQ] = useState('');
   const [responses, setResponses] = useState([]);
+  const [allResponsesMap, setAllResponsesMap] = useState({});
   const [hasAnswered, setHasAnswered] = useState(false);
   const [myAnswer, setMyAnswer] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -92,6 +93,16 @@ function ExamPage() {
     return () => unsubscribe();
   }, [currentQ, seatNumber]);
 
+  useEffect(() => {
+    const allResponsesRef = ref(db, 'responses');
+
+    const unsubscribe = onValue(allResponsesRef, (snapshot) => {
+      setAllResponsesMap(snapshot.val() || {});
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const counts = useMemo(() => {
     const base = {};
     options.forEach((option) => {
@@ -116,6 +127,51 @@ function ExamPage() {
     if (!revealed || !correctAnswer) return 0;
     return responses.filter((item) => item.answer !== correctAnswer).length;
   }, [responses, correctAnswer, revealed]);
+
+  const studentStats = useMemo(() => {
+    return Array.from({ length: SEAT_COUNT }, (_, i) => {
+      const seat = i + 1;
+
+      const details = Array.from({ length: questionCount }, (_, j) => {
+        const questionId = `Q${j + 1}`;
+        const response = allResponsesMap?.[questionId]?.[`seat_${seat}`];
+        const officialAnswer = answerKey?.[questionId] || '';
+
+        let result = '未作答';
+        if (response) {
+          const isCorrect =
+            typeof response.isCorrect === 'boolean'
+              ? response.isCorrect
+              : officialAnswer
+                ? response.answer === officialAnswer
+                : false;
+
+          result = isCorrect ? '答對' : '答錯';
+        }
+
+        return {
+          questionId,
+          answer: response?.answer || '-',
+          result,
+        };
+      });
+
+      const answeredCount = details.filter((item) => item.answer !== '-').length;
+      const correctCount = details.filter((item) => item.result === '答對').length;
+      const completionRate = questionCount > 0 ? ((answeredCount / questionCount) * 100).toFixed(1) : '0.0';
+      const accuracyRate = questionCount > 0 ? ((correctCount / questionCount) * 100).toFixed(1) : '0.0';
+
+      return {
+        seatNumber: seat,
+        name: `${seat}號`,
+        answeredCount,
+        correctCount,
+        completionRate,
+        accuracyRate,
+        details,
+      };
+    });
+  }, [allResponsesMap, answerKey, questionCount]);
 
   const handleTeacherLogin = () => {
     if (passwordInput === TEACHER_PASSWORD) {
@@ -195,10 +251,14 @@ function ExamPage() {
     try {
       setIsSubmitting(true);
 
+      const officialAnswer = correctAnswer || answerKey[currentQ] || '';
+
       await set(ref(db, `responses/${currentQ}/seat_${seatNumber}`), {
         seatNumber: Number(seatNumber),
         name: `${seatNumber}號`,
+        questionId: currentQ,
         answer,
+        isCorrect: officialAnswer ? answer === officialAnswer : false,
         time: Date.now(),
       });
 
@@ -407,6 +467,64 @@ function ExamPage() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+
+          <div style={{ ...cardStyle, gridColumn: '1 / -1' }}>
+            <h2 style={sectionTitleStyle}>學生總表</h2>
+            <div style={studentStatsListStyle}>
+              {studentStats.map((student) => (
+                <div key={student.seatNumber} style={studentStatCardStyle}>
+                  <div style={studentStatHeaderStyle}>
+                    <div style={{ fontSize: 20, fontWeight: 900 }}>{student.name}</div>
+                    <div style={studentStatSummaryStyle}>
+                      <span>作答 {student.answeredCount}/{questionCount}</span>
+                      <span>答對 {student.correctCount}</span>
+                      <span>完成率 {student.completionRate}%</span>
+                      <span>答對率 {student.accuracyRate}%</span>
+                    </div>
+                  </div>
+
+                  <div style={studentDetailGridStyle}>
+                    {student.details.map((item) => (
+                      <div
+                        key={`${student.seatNumber}-${item.questionId}`}
+                        style={{
+                          ...studentDetailBoxStyle,
+                          backgroundColor:
+                            item.result === '答對'
+                              ? '#f0fdf4'
+                              : item.result === '答錯'
+                                ? '#fef2f2'
+                                : '#f8fafc',
+                          borderColor:
+                            item.result === '答對'
+                              ? '#bbf7d0'
+                              : item.result === '答錯'
+                                ? '#fecaca'
+                                : '#e5e7eb',
+                        }}
+                      >
+                        <div style={{ fontWeight: 800 }}>{item.questionId}</div>
+                        <div>答案：{item.answer}</div>
+                        <div
+                          style={{
+                            fontWeight: 800,
+                            color:
+                              item.result === '答對'
+                                ? '#16a34a'
+                                : item.result === '答錯'
+                                  ? '#dc2626'
+                                  : '#6b7280',
+                          }}
+                        >
+                          {item.result}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -785,6 +903,47 @@ const resultStudentBox = {
   border: '1px solid #e5e7eb',
   borderRadius: 16,
   padding: 24,
+};
+
+const studentStatsListStyle = {
+  display: 'grid',
+  gap: 16,
+};
+
+const studentStatCardStyle = {
+  border: '1px solid #e5e7eb',
+  borderRadius: 16,
+  padding: 16,
+  backgroundColor: '#fafafa',
+};
+
+const studentStatHeaderStyle = {
+  display: 'grid',
+  gap: 10,
+  marginBottom: 14,
+};
+
+const studentStatSummaryStyle = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 12,
+  fontSize: 15,
+  fontWeight: 700,
+  color: '#374151',
+};
+
+const studentDetailGridStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+  gap: 10,
+};
+
+const studentDetailBoxStyle = {
+  border: '1px solid #e5e7eb',
+  borderRadius: 12,
+  padding: 10,
+  fontSize: 14,
+  lineHeight: 1.5,
 };
 
 export default ExamPage;
